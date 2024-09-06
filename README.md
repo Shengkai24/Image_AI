@@ -1,1 +1,1 @@
-# This model based on RaiseNet50
+# This model based on ResNet50
