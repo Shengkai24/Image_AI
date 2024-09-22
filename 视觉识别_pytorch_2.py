@@ -1,44 +1,28 @@
+import os
 import torch  
-import torchvision.transforms as transforms  
+import torch.nn as nn  
 import torchvision.models as models  
-from PIL import Image  
-  
-# 确保PyTorch使用CUDA  
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
-  
-# 加载预训练的ResNet50模型，并将其移到指定的设备上  
-#model = models.resnet50(pretrained=True).to(device)
-# 使用新的 weights 参数加载预训练的 ResNet50 模型  
-model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1).to(device)  
-model.eval() 
-  
-# 图像预处理流程  
-transform = transforms.Compose([  
-    transforms.Resize(256),  
-    transforms.CenterCrop(224),  
-    transforms.ToTensor(),  
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),  
-])  
-  
-# 加载并处理图像  
-img_path = r'D:\Desktop\AI\Image_AI\Training_material\Car_1.png'  
-try:  
-    img = Image.open(img_path)
-    img = img.convert('RGB')
-except FileNotFoundError:  
-    print(f"The image at {img_path} could not be found.")  
-    exit()  
-  
-img_t = transform(img).unsqueeze(0).to(device)  
-  
-# 进行预测  
-with torch.no_grad():  
-    output = model(img_t)  
-    _, predicted = torch.max(output, 1)  
-  
-# 打印预测分数和预测的类别索引  
-print('Predicted scores:', output.cpu().numpy())   
-  
+import torchvision.transforms as transforms  
+from torchvision.datasets import ImageFolder  
+from torch.utils.data import DataLoader  
+
+# 1. 加载预训练的ResNet50模型  
+model = models.resnet50(pretrained=True)  
+
+# 打印原始的全连接层信息
+print(model.fc)
+
+# 修改最后的全连接层  
+num_original_classes = 1000  
+num_new_classes = 2  
+num_total_classes = num_original_classes + num_new_classes  
+
+# 替换最后的全连接层  
+model.fc = nn.Linear(model.fc.in_features, num_total_classes)
+
+# 再次打印新的全连接层信息以确认替换成功
+print(model.fc)
+
 # 加载标签文件并获取预测的类别名称  
 def load_labels(labels_file):  
     try:  
@@ -48,8 +32,82 @@ def load_labels(labels_file):
     except FileNotFoundError:  
         print(f"The labels file at {labels_file} could not be found.")  
         exit()  
-  
-class_index_to_name = load_labels(r'D:\Desktop\AI\Image_AI\imagenet_labels\imagenet_labels.txt')
-predicted_name = class_index_to_name[predicted.item()]  
-  
-print('Predicted class:', predicted_name)
+
+labels = load_labels(os.getenv('LABELS_FILE', r'D:\Desktop\AI\Image_AI\imagenet_labels\imagenet_labels.txt'))
+
+# 2. 准备你的数据  
+data_root = os.getenv('DATA_ROOT', r'D:\Desktop\AI\Image_AI\Training_material')  # 使用环境变量或配置文件来设置数据路径
+transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+train_dataset = ImageFolder(root=os.path.join(data_root, 'train'), transform=transform)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+
+val_dataset = ImageFolder(root=os.path.join(data_root, 'val'), transform=transform)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+
+# 3. 定义损失函数和优化器  
+def initialize_model(model):
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    return criterion, optimizer
+
+criterion, optimizer = initialize_model(model)
+
+# 4. 训练模型  
+try:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+except Exception as e:
+    print(f"Error setting up device: {e}")
+    # 尝试使用CPU继续运行
+    device = torch.device("cpu")
+    model = model.to(device)
+    print("Falling back to CPU.")
+
+num_epochs = 10  
+
+for epoch in range(num_epochs):  
+    model.train()  
+    running_loss = 0.0  
+    
+    for inputs, labels in train_loader:  
+        inputs, labels = inputs.to(device), labels.to(device)  
+    
+        optimizer.zero_grad()  
+    
+        outputs = model(inputs)  
+        loss = criterion(outputs, labels)  
+        loss.backward()  
+        optimizer.step()  
+    
+        running_loss += loss.item()  
+    
+    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")  
+    
+    # 验证阶段  
+    model.eval()  
+    correct = 0  
+    total = 0  
+    
+    with torch.no_grad():  
+        for inputs, labels in val_loader:  
+            inputs, labels = inputs.to(device), labels.to(device)  
+    
+            outputs = model(inputs)  
+            _, predicted = torch.max(outputs.data, 1)  
+            total += labels.size(0)  
+            correct += (predicted == labels).sum().item()  
+    
+    print(f"Validation Accuracy: {100 * correct / total:.2f}%")
+
+# 打印预测分数和预测的类别索引  
+print('Predicted scores:', outputs.cpu().numpy())   
+
+# 保存模型  
+model_save_path = os.getenv('MODEL_SAVE_PATH', r'D:\Desktop\AI\Image_AI\model.pth')
+torch.save(model.state_dict(), model_save_path)

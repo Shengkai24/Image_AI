@@ -998,3 +998,5 @@
 997	bolete
 998	ear, spike, capitulum
 999	toilet tissue, toilet paper, bathroom tissue
+1000	Small battery
+1001	SUV, sport utility vehicle
