@@ -21,7 +21,7 @@ transform = transforms.Compose([
 ])  
   
 # 加载并处理图像  
-img_path = r'D:\Desktop\AI\Image_AI\Training_material\Car_1.png'  
+img_path = r'D:\Desktop\AI\Image_AI\Images\Lion_1.jpg'  
 try:  
     img = Image.open(img_path)
     img = img.convert('RGB')
@@ -50,7 +50,7 @@ def load_labels(labels_file):
         print(f"The labels file at {labels_file} could not be found.")  
         exit()  
   
-class_index_to_name = load_labels(r'D:\Desktop\AI\Image_AI\imagenet_labels\imagenet_labels.txt')
+class_index_to_name = load_labels(r'D:\Desktop\AI\Image_AI\imagenet_labels\imagenet_labels_2.txt')
 predicted_name = class_index_to_name[predicted.item()]  
   
 print('Predicted class:', predicted_name)
